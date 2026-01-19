@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Strength Tester</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 { margin-top: 20px; text-transform: uppercase; letter-spacing: 2px; }
+
+        /* The Game Container */
+        .game-container {
+            position: relative;
+            width: 150px;
+            height: 500px;
+            background: #333;
+            border-radius: 10px;
+            margin-top: 20px;
+            border: 4px solid #555;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+
+        /* The Moving Bar */
+        .power-bar {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 0%;
+            background: linear-gradient(to top, #00ff00, #ffff00, #ff0000);
+            transition: height 0.1s ease-out;
+        }
+
+        /* Percentage Text */
+        .score-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 40px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 10;
+        }
+
+        /* High Score Marker */
+        .high-score-line {
+            position: absolute;
+            bottom: 0%; 
+            width: 100%;
+            height: 2px;
+            background-color: white;
+            z-index: 5;
+            border-top: 2px dashed #fff;
+        }
+
+        .controls { margin-top: 20px; }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #555; cursor: not-allowed; }
+
+        .status { margin-top: 10px; color: #888; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <h1>💪 Strength Challenge</h1>
+
+    <div class="game-container">
+        <div class="power-bar" id="bar"></div>
+        <div class="score-display"><span id="score">0</span>%</div>
+        <div class="high-score-line" id="highScoreLine"></div>
+    </div>
+
+    <div class="controls">
+        <button id="connectBtn">🔌 Connect Arduino</button>
+    </div>
+    <div class="status" id="status">Status: Disconnected</div>
+
+    <script>
+        let port;
+        let reader;
+        let highScore = 0;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const statusDisplay = document.getElementById('status');
+        const bar = document.getElementById('bar');
+        const scoreText = document.getElementById('score');
+        const highScoreLine = document.getElementById('highScoreLine');
+
+        connectBtn.addEventListener('click', async () => {
+            if ("serial" in navigator) {
+                try {
+                    port = await navigator.serial.requestPort();
+                    await port.open({ baudRate: 9600 });
+                    
+                    statusDisplay.textContent = "Status: Connected!";
+                    connectBtn.disabled = true;
+                    connectBtn.textContent = "Connected";
+
+                    const textDecoder = new TextDecoderStream();
+                    const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                    reader = textDecoder.readable.getReader();
+
+                    readLoop();
+                } catch (err) {
+                    console.error("Error:", err);
+                    statusDisplay.textContent = "Error: " + err;
+                }
+            } else {
+                alert("Web Serial API not supported. Please use Chrome or Edge.");
+            }
+        });
+
+        async function readLoop() {
+            let buffer = "";
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    reader.releaseLock();
+                    break;
+                }
+                
+                if (value) {
+                    buffer += value;
+                    // Split by new line to get clean numbers
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep the incomplete chunk for next time
+
+                    for (const line of lines) {
+                        handleData(line.trim());
+                    }
+                }
+            }
+        }
+
+        function handleData(data) {
+            // Ensure data is a number
+            let force = parseInt(data);
+            
+            if (!isNaN(force)) {
+                // Update Graphics
+                bar.style.height = force + "%";
+                scoreText.innerText = force;
+
+                // High Score Logic
+                if (force > highScore) {
+                    highScore = force;
+                    highScoreLine.style.bottom = highScore + "%";
+                }
+            }
+        }
+    </script>
+</body>
+</html>
