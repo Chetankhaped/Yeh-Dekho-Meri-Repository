@@ -1,0 +1,70 @@
+services:
+  credits:
+    build:
+      context: ./Credits_And_Payment
+      dockerfile: Dockerfile
+    container_name: deepfake-credits
+    env_file:
+      - ./Credits_And_Payment/.env
+    # Env comes from Credits_And_Payment/.env
+    volumes:
+      - credits_data:/data
+    ports:
+      - "${CREDITS_HOST_PORT:-8003}:8002"
+    restart: unless-stopped
+
+  detection_engine:
+    build:
+      context: ./Deepfake_Detection_Engine
+      dockerfile: Dockerfile
+    container_name: deepfake-detection-engine
+    env_file:
+      - ./AWS/.env
+    environment:
+      # Adjust allowed origins to the website container and local dev; override via root .env ALLOWED_ORIGINS
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost,http://127.0.0.1}"
+      # Path to the model inside the container
+      MODEL_PATH: /app/model/best_pinpoint_model_antisocial.pth
+      # Optional: tune max upload size in MB
+      MAX_UPLOAD_MB: "${MAX_UPLOAD_MB:-400}"
+      # Optional: when fronted by an ALB at a path like /engine, strip this prefix
+      BASE_PATH_PREFIX: "${BASE_PATH_PREFIX:-}"
+      # Credits integration (optional)
+      CREDITS_ENABLED: "${CREDITS_ENABLED:-false}"
+      CREDITS_API_URL: http://credits:8002
+      # Temporarily disable token enforcement for local testing
+      COGNITO_ENFORCE: "${COGNITO_ENFORCE:-false}"
+      # Multi-model ensemble configuration
+      USE_ENSEMBLE: "${USE_ENSEMBLE:-true}"
+      ENSEMBLE_CONFIG: "${ENSEMBLE_CONFIG:-fast}"
+      MODEL_DIR: "/app/model"
+    # Cognito values provided via env_file AWS/.env
+    volumes:
+      # Mount the model file and user data persistently
+      - ./Deepfake_Detection_Engine/model:/app/model:ro
+      # Do not mount local user_data; engine persists only to S3
+    ports:
+      # Map backend to configurable host port (defaults to 8001)
+      - "${ENGINE_HOST_PORT:-8001}:8000"
+    restart: unless-stopped
+
+  website:
+    build:
+      context: ./Deepfake_Analyzer_Tool_Website
+      dockerfile: Dockerfile
+    container_name: deepfake-website
+    env_file:
+      - ./.env
+    ports:
+      - "${WEBSITE_HOST_PORT:-8080}:80"
+    depends_on:
+      - credits
+      - detection_engine
+    restart: unless-stopped
+
+networks:
+  default:
+    name: deepfake-suite
+
+volumes:
+  credits_data:

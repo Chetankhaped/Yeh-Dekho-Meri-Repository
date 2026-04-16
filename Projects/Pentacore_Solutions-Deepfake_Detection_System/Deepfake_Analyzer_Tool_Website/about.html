@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About • Deepfake Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="icon" href="./assets/deepfake_analyzer_tool_logo.png">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body class="has-bg">
+    <canvas id="bg" aria-hidden="true"></canvas>
+    <div class="page fade-in">
+      <header class="topbar glass">
+        <div class="brand">
+          <img src="./assets/deepfake_analyzer_tool_logo.png" alt="Logo">
+          <div>
+            <div class="brand-title">Deepfake Analyzer Tool</div>
+            <div class="brand-sub">About</div>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn mini" href="./deepfake_analyzer_tool.html">Back to App</a>
+        </div>
+      </header>
+      <main class="main">
+        <div class="card glass pop">
+          <h3>Our Mission</h3>
+          <p>Empower everyone to verify media authenticity with transparent, explainable AI.</p>
+          <ul>
+            <li>Multi-model ensemble analysis with 3 specialized detection engines</li>
+            <li>Transformer-based audiovisual synchronization analysis</li>
+            <li>Intuitive heatmaps, attention overlays, and signal sync visualizations</li>
+            <li>Privacy-first: S3-only artifact storage when enabled</li>
+          </ul>
+        </div>
+        
+        <div class="card glass pop">
+          <h3>Detection Models</h3>
+          <p>Our system employs three specialized deep learning models that work together to provide comprehensive deepfake detection:</p>
+          
+          <h4 style="margin-top: 20px; color: #3b82f6;">🎯 Pinpoint (Primary Ensemble Model)</h4>
+          <p>Advanced transformer-based model providing detailed frame-by-frame analysis:</p>
+          <ul>
+            <li><strong>Audio-Video Synchronization:</strong> Analyzes correlation between audio RMS and mouth openness</li>
+            <li><strong>Attention Patterns:</strong> Uses cross-attention mechanisms to detect anomalies</li>
+            <li><strong>Mel Spectrogram Analysis:</strong> Examines audio frequency patterns for artifacts</li>
+            <li><strong>Temporal Consistency:</strong> Tracks frame-by-frame energy patterns</li>
+          </ul>
+          
+          <h4 style="margin-top: 20px; color: #8b5cf6;">🔍 VGG16 v1 (Visual Analysis Specialist)</h4>
+          <p>Convolutional neural network focused on visual artifact detection:</p>
+          <ul>
+            <li><strong>Texture Patterns:</strong> Hierarchical texture feature extraction using deep convolutional layers</li>
+            <li><strong>Edge Detection:</strong> Sobel and Canny algorithms to identify manipulation boundaries</li>
+            <li><strong>Color Consistency:</strong> Histogram distribution analysis across temporal sequences</li>
+            <li><strong>Transfer Learning:</strong> Leverages ImageNet pre-training for unnatural pattern recognition</li>
+          </ul>
+          
+          <h4 style="margin-top: 20px; color: #ec4899;">🎨 VGG16 v2 (Gradient & Artifact Detector)</h4>
+          <p>Enhanced VGG16 variant specializing in compression artifacts and gradients:</p>
+          <ul>
+            <li><strong>Texture Patterns:</strong> Gabor filters and Local Binary Patterns for texture discontinuities</li>
+            <li><strong>Gradient Analysis:</strong> Spatial gradient analysis to detect unnatural transitions</li>
+            <li><strong>Artifacts Detection:</strong> JPEG compression artifacts and re-compression pattern identification</li>
+            <li><strong>Frequency Domain Analysis:</strong> Detects frequency anomalies indicating digital manipulation</li>
+          </ul>
+          
+          <h4 style="margin-top: 20px; color: #10b981;">📊 Ensemble Approach</h4>
+          <p>The system combines predictions from all three models to provide a robust confidence score. Each model contributes its specialized analysis, resulting in more accurate and reliable detection than any single model could achieve alone.</p>
+        </div>
+        
+        <div class="card glass pop">
+          <h3>Technical Specifications</h3>
+          <ul>
+            <li><strong>Architecture:</strong> Multi-model ensemble (Pinpoint + VGG16 variants)</li>
+            <li><strong>Input Resolution:</strong> 224×224 pixels for VGG16 models</li>
+            <li><strong>Supported Formats:</strong> MP4, AVI, MOV videos; JPG, PNG images</li>
+            <li><strong>Analysis Types:</strong> Visual, audio, and audiovisual synchronization</li>
+            <li><strong>Confidence Scoring:</strong> 0-100% manipulation probability</li>
+            <li><strong>Processing:</strong> GPU-accelerated deep learning inference</li>
+          </ul>
+        </div>
+      </main>
+      <footer class="footer">Powered by Pentacore Solutions • <span id="year"></span> All rights reserved.</footer>
+    </div>
+    <script>const y=document.getElementById('year'); if(y) y.textContent=(new Date).getFullYear(); (function(){const c=document.getElementById('bg');const x=c.getContext('2d');let w,h,p=window.devicePixelRatio||1;function r(){w=c.width=innerWidth*p;h=c.height=innerHeight*p;c.style.width=innerWidth+'px';c.style.height=innerHeight+'px'}r();addEventListener('resize',r);const n=60,a=Array.from({length:n},()=>({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.35*p,vy:(Math.random()-.5)*.35*p}));(function l(){x.clearRect(0,0,w,h);x.strokeStyle='rgba(148,163,184,0.08)';x.lineWidth=p;for(const e of a){e.x+=e.vx;e.y+=e.vy;if(e.x<0||e.x>w)e.vx*=-1;if(e.y<0||e.y>h)e.vy*=-1}for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const b=a[i],d=a[j],dx=b.x-d.x,dy=b.y-d.y,m=dx*dx+dy*dy;if(m<(140*p)**2){const t=1-m/((140*p)**2);x.globalAlpha=t*.7;x.beginPath();x.moveTo(b.x,b.y);x.lineTo(d.x,d.y);x.stroke()}}x.globalAlpha=1;requestAnimationFrame(l)})()})();</script>
+  </body>
+  </html>

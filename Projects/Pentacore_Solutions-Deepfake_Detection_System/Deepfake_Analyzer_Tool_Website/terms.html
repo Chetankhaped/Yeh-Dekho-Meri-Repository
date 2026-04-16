@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Terms • Deepfake Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="icon" href="./assets/deepfake_analyzer_tool_logo.png">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body class="has-bg">
+    <canvas id="bg" aria-hidden="true"></canvas>
+    <div class="page fade-in">
+      <header class="topbar glass">
+        <div class="brand">
+          <img src="./assets/deepfake_analyzer_tool_logo.png" alt="Logo">
+          <div>
+            <div class="brand-title">Deepfake Analyzer Tool</div>
+            <div class="brand-sub">Terms & Conditions</div>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn mini" href="./deepfake_analyzer_tool.html">Back to App</a>
+        </div>
+      </header>
+      <main class="main">
+        <div class="card glass pop">
+          <h3>Terms & Conditions</h3>
+          <ul>
+            <li>Uploaded content is processed to derive detection results and visualizations.</li>
+            <li>Artifacts may be stored under a user-specific path in S3 when enabled; links may be presigned.</li>
+            <li>Results are probabilistic; use for decision support only.</li>
+            <li>Do not upload illegal or copyrighted content you do not own.</li>
+          </ul>
+        </div>
+      </main>
+      <footer class="footer">Powered by Pentacore Solutions • <span id="year"></span> All rights reserved.</footer>
+    </div>
+    <script>const y=document.getElementById('year'); if(y) y.textContent=(new Date).getFullYear(); (function(){const c=document.getElementById('bg');const x=c.getContext('2d');let w,h,p=window.devicePixelRatio||1;function r(){w=c.width=innerWidth*p;h=c.height=innerHeight*p;c.style.width=innerWidth+'px';c.style.height=innerHeight+'px'}r();addEventListener('resize',r);const n=60,a=Array.from({length:n},()=>({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.35*p,vy:(Math.random()-.5)*.35*p}));(function l(){x.clearRect(0,0,w,h);x.strokeStyle='rgba(148,163,184,0.08)';x.lineWidth=p;for(const e of a){e.x+=e.vx;e.y+=e.vy;if(e.x<0||e.x>w)e.vx*=-1;if(e.y<0||e.y>h)e.vy*=-1}for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const b=a[i],d=a[j],dx=b.x-d.x,dy=b.y-d.y,m=dx*dx+dy*dy;if(m<(140*p)**2){const t=1-m/((140*p)**2);x.globalAlpha=t*.7;x.beginPath();x.moveTo(b.x,b.y);x.lineTo(d.x,d.y);x.stroke()}}x.globalAlpha=1;requestAnimationFrame(l)})()})();</script>
+  </body>
+  </html>

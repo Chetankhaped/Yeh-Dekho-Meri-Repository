@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deepfake Detector</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #111; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 980px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .heatmaps img { width: 260px; border-radius: 8px; border: 1px solid #ddd; }
+    .progress { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin: 8px 0; }
+    .bar { height: 100%; width: 0%; background: #3b82f6; transition: width .2s; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 600; }
+    .badge.real { background: #dcfce7; color: #14532d; }
+    .badge.fake { background: #fee2e2; color: #7f1d1d; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+    <h1>Deepfake Detector</h1>
+    <p>Upload a video or image. Videos with audio will use the pretrained model; videos without audio and images use Laplacian sharpness heuristics.</p>
+
+    <div class="card">
+      <input id="file" type="file" accept="video/*,image/*" />
+      <input id="userId" type="text" placeholder="User ID (optional)" style="margin-left:8px;" />
+      <label><input id="explain" type="checkbox" checked /> Generate visual explanations (Grad-CAM)</label>
+      <button id="btn" disabled>Analyze</button>
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <pre class="mono" id="log"></pre>
+    </div>
+
+    <div id="result" class="card" style="margin-top:16px; display:none;">
+      <div id="summary"></div>
+      <div id="meta" class="mono" style="margin:8px 0; color:#374151;"></div>
+
+      <h2>Model prediction (audio present)</h2>
+    <div id="noAudio" class="mono" style="display:none; color:#7f1d1d;">No Audio Present in Video</div>
+      <div id="modelSection" style="display:none;">
+        <h3>Per-frame attention energy</h3>
+        <canvas id="chart" width="900" height="200"></canvas>
+        <div class="row">
+          <div>
+            <h3>Waveform</h3>
+            <canvas id="wave" width="900" height="120"></canvas>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <h3>Mel Spectrogram</h3>
+            <canvas id="mel" width="900" height="300"></canvas>
+          </div>
+        </div>
+        <div class="heatmaps row" id="heatmaps"></div>
+        <h3>Lip region overlays</h3>
+        <div class="heatmaps row" id="lipmaps"></div>
+        <div class="row">
+          <div>
+            <h3>Sync series (audio RMS vs mouth openness)</h3>
+            <canvas id="sync" width="900" height="200"></canvas>
+            <div id="syncScore" class="mono"></div>
+          </div>
+        </div>
+      </div>
+
+      <h2>Laplacian prediction</h2>
+      <div id="lapSection">
+        <div class="row">
+          <div>
+            <h3>Per-frame sharpness (variance of Laplacian)</h3>
+            <canvas id="sharp" width="900" height="200"></canvas>
+            <div id="sharpStats" class="mono"></div>
+          </div>
+        </div>
+        <div class="heatmaps row" id="lapHeatmaps"></div>
+      </div>
+    </div>
+
+    <script>
+      const fileEl = document.getElementById('file');
+      const btn = document.getElementById('btn');
+      const bar = document.getElementById('bar');
+      const log = document.getElementById('log');
+      const result = document.getElementById('result');
+      const summary = document.getElementById('summary');
+      const heatmaps = document.getElementById('heatmaps');
+      const explainEl = document.getElementById('explain');
+  const userIdEl = document.getElementById('userId');
+      const modelSection = document.getElementById('modelSection');
+
+      fileEl.addEventListener('change', () => { btn.disabled = !fileEl.files.length; });
+
+      btn.addEventListener('click', async () => {
+        if (!fileEl.files.length) return;
+        result.style.display = 'none';
+        log.textContent = 'Uploading...';
+        bar.style.width = '10%';
+        const fd = new FormData();
+        fd.append('file', fileEl.files[0]);
+  fd.append('explain', explainEl.checked ? 'true' : 'false');
+  if (userIdEl.value) fd.append('user_id', userIdEl.value);
+        try {
+          bar.style.width = '40%';
+    const isImage = fileEl.files[0]?.type.startsWith('image/');
+          const url = isImage ? '/predict-image' : '/predict';
+          const res = await fetch(url, { method: 'POST', body: fd });
+          bar.style.width = '70%';
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error('Server error: ' + t);
+          }
+          const data = await res.json();
+          bar.style.width = '100%';
+          log.textContent = '';
+          if (isImage) renderImageResult(data); else renderVideoResult(data);
+        } catch (e) {
+          log.textContent = String(e);
+        } finally {
+          setTimeout(() => bar.style.width = '0%', 600);
+        }
+      });
+
+      function renderVideoResult(data) {
+        result.style.display = 'block';
+        const meta = data.video_meta ? `fps=${data.video_meta.fps?.toFixed?.(2) ?? data.video_meta.fps}, total_frames=${data.video_meta.total_frames}, duration=${data.video_meta.duration_sec?.toFixed?.(2) ?? data.video_meta.duration_sec}s` : '';
+        document.getElementById('meta').textContent = meta;
+
+        // Model section only if present (audio-present videos)
+        const noAudio = document.getElementById('noAudio');
+        const hasModel = !!data.model_pred;
+        modelSection.style.display = hasModel ? 'block' : 'none';
+        noAudio.style.display = hasModel ? 'none' : 'block';
+        if (hasModel){
+          const m = data.model_pred;
+          summary.innerHTML = `Model: <span class="badge ${m.label}">${m.label.toUpperCase()}</span> — Fake prob: <b>${m.score.toFixed(3)}</b>`;
+          drawChart(m.per_frame_scores || []);
+          drawWave(m.waveform || []);
+          drawMel(m.mel_spectrogram || []);
+          drawSync(m.sync_series_audio || [], m.sync_series_mouth || [], m.sync_metric ?? null);
+          heatmaps.innerHTML = '';
+          if (m.heatmaps) for (const b64 of m.heatmaps){ const img=document.createElement('img'); img.src='data:image/png;base64,'+b64; heatmaps.appendChild(img); }
+          const lip = document.getElementById('lipmaps');
+          lip.innerHTML = '';
+          if (m.lip_heatmaps) for (const b64 of m.lip_heatmaps){ const img=document.createElement('img'); img.src='data:image/png;base64,'+b64; lip.appendChild(img); }
+        } else {
+          summary.innerHTML = '';
+          heatmaps.innerHTML = '';
+          document.getElementById('lipmaps').innerHTML = '';
+          document.getElementById('sync').getContext('2d').clearRect(0,0,900,200);
+          document.getElementById('wave').getContext('2d').clearRect(0,0,900,120);
+          document.getElementById('mel').getContext('2d').clearRect(0,0,900,300);
+          document.getElementById('syncScore').textContent = '';
+        }
+
+    // Laplacian section is always present for videos
+        const l = data.laplacian_pred;
+        const lapHdr = `Laplacian: <span class="badge ${l.label}">${l.label.toUpperCase()}</span> — Heuristic fake prob: <b>${l.score.toFixed(3)}</b>`;
+        summary.innerHTML += (summary.innerHTML ? '<br/>' : '') + lapHdr;
+        drawSharp(l.sharpness_series || [], l.sharpness_threshold ?? null, l.sharpness_mean ?? null);
+        const lapHeat = document.getElementById('lapHeatmaps');
+        lapHeat.innerHTML = '';
+        if (l.overlay_heatmaps) for (const b64 of l.overlay_heatmaps){ const img=document.createElement('img'); img.src='data:image/png;base64,'+b64; lapHeat.appendChild(img); }
+      }
+
+      function drawChart(values) {
+        const canvas = document.getElementById('chart');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const W = canvas.width, H = canvas.height;
+        const n = values.length || 1;
+        let max = 1e-6; for (let i = 0; i < values.length; i++) { const v = values[i]; if (v > max) max = v; }
+        ctx.strokeStyle = '#e5e7eb';
+        for (let y = 0; y <= 1.0; y += 0.25) { const yy = H - y * H; ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke(); }
+        ctx.beginPath(); ctx.strokeStyle = '#3b82f6';
+        for (let i = 0; i < n; i++) { const x = i / (n - 1 || 1) * (W - 20) + 10; const y = H - (values[i] / max) * (H - 20) - 10; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+        ctx.stroke();
+      }
+
+      function drawWave(values) {
+        const canvas = document.getElementById('wave');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        if (!values.length) return;
+        const W=canvas.width, H=canvas.height;
+        let max = 1e-6; for (let i=0;i<values.length;i++){ const a=Math.abs(values[i]); if(a>max) max=a; }
+        ctx.strokeStyle = '#10b981';
+        ctx.beginPath();
+        for (let i=0;i<values.length;i++){
+          const x = i/(values.length-1) * (W-2) + 1;
+          const y = H/2 - (values[i]/max)*(H/2-4);
+          if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+      }
+
+      function drawMel(matrix){
+        const canvas = document.getElementById('mel');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        if (!matrix.length) return;
+        const rows = matrix.length, cols = matrix[0].length;
+        const img = ctx.createImageData(cols, rows);
+        let min=Infinity,max=-Infinity;
+        for (let r=0;r<rows;r++) for (let c=0;c<cols;c++){ const v=matrix[r][c]; if(v<min)min=v; if(v>max)max=v; }
+        const scale = max>min ? 255/(max-min) : 1;
+        let k=0;
+        for (let r=0;r<rows;r++){
+          for (let c=0;c<cols;c++){
+            const v = Math.floor((matrix[r][c]-min)*scale);
+            const R=v, G=v, B=255-v;
+            img.data[k++] = R; img.data[k++] = G; img.data[k++] = B; img.data[k++] = 255;
+          }
+        }
+        const off = document.createElement('canvas'); off.width = cols; off.height = rows;
+        off.getContext('2d').putImageData(img,0,0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+      }
+
+      function drawSync(audio, mouth, score){
+        const canvas = document.getElementById('sync');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        const W=canvas.width,H=canvas.height;
+        if (!audio.length || !mouth.length){ document.getElementById('syncScore').textContent = ''; return; }
+        const n = Math.min(audio.length, mouth.length);
+        const ax = audio.slice(0,n), mx = mouth.slice(0,n);
+        let maxv = 1e-6; for (let i=0;i<n;i++){ if(ax[i]>maxv) maxv=ax[i]; if(mx[i]>maxv) maxv=mx[i]; }
+        ctx.strokeStyle = '#e5e7eb'; for (let y=0;y<=1;y+=0.25){ const yy = H - y*H; ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke(); }
+        ctx.strokeStyle = '#10b981'; ctx.beginPath();
+        for (let i=0;i<n;i++){ const x=i/(n-1||1)*(W-20)+10; const y=H - (ax[i]/maxv)*(H-20)-10; if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke();
+        ctx.strokeStyle = '#f59e0b'; ctx.beginPath();
+        for (let i=0;i<n;i++){ const x=i/(n-1||1)*(W-20)+10; const y=H - (mx[i]/maxv)*(H-20)-10; if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke();
+        const el = document.getElementById('syncScore');
+        if (score !== null) el.textContent = `Sync correlation: ${score.toFixed(3)} (higher is better)`;
+      }
+
+      function drawSharp(values, threshold, meanVal){
+        const canvas = document.getElementById('sharp');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        const W=canvas.width,H=canvas.height;
+        if (!values.length){ document.getElementById('sharpStats').textContent = ''; return; }
+        let maxv = 1e-6; for (let i=0;i<values.length;i++){ if(values[i]>maxv) maxv=values[i]; }
+        ctx.strokeStyle = '#e5e7eb'; for (let y=0;y<=1;y+=0.25){ const yy = H - y*H; ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke(); }
+        ctx.strokeStyle = '#6b7280'; ctx.beginPath();
+        for (let i=0;i<values.length;i++){
+          const x=i/(values.length-1||1)*(W-20)+10; const y=H - (values[i]/maxv)*(H-20)-10;
+          if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+        if (threshold != null){ const ty = H - (Math.min(threshold,maxv)/maxv)*(H-20)-10; ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(0,ty); ctx.lineTo(W,ty); ctx.stroke(); }
+        let stats = `mean=${(meanVal??0).toFixed(1)}`; if (threshold != null) stats += `, thr=${threshold}`; document.getElementById('sharpStats').textContent = stats;
+      }
+
+      function renderImageResult(data){
+        result.style.display = 'block';
+        modelSection.style.display = 'none';
+        document.getElementById('meta').textContent = '';
+        const hdr = `Laplacian (image): <span class="badge ${data.label}">${data.label.toUpperCase()}</span> — sharpness=${data.sharpness_value.toFixed(1)} (thr=${data.sharpness_threshold})`;
+        summary.innerHTML = hdr;
+        heatmaps.innerHTML = '';
+        document.getElementById('lipmaps').innerHTML = '';
+        document.getElementById('sync').getContext('2d').clearRect(0,0,900,200);
+        document.getElementById('wave').getContext('2d').clearRect(0,0,900,120);
+        document.getElementById('mel').getContext('2d').clearRect(0,0,900,300);
+        document.getElementById('syncScore').textContent = '';
+        drawSharp([data.sharpness_value], data.sharpness_threshold, data.sharpness_value);
+        const lapHeat = document.getElementById('lapHeatmaps'); lapHeat.innerHTML = '';
+        if (data.heatmap){ const img=document.createElement('img'); img.src='data:image/png;base64,'+data.heatmap; lapHeat.appendChild(img); }
+      }
+    </script>
+  </script>
+</body>
+</html>

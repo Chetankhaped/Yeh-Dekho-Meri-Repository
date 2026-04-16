@@ -1,0 +1,988 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: All-in-one AWS stack for Deepfake Analyzer Tool (S3 + Cognito + optional IAM user)
+
+Parameters:
+  StackNamespace:
+    Type: String
+    Default: deepfake-demo
+    Description: Logical namespace prefix for named resources
+
+  # S3
+  S3BucketName:
+    Type: String
+    Default: deepfake-analyzer-tool
+    Description: S3 bucket name (must be globally unique)
+  S3Prefix:
+    Type: String
+    Default: dev
+    Description: Prefix under the bucket for namespacing objects
+
+  # Cognito
+  UserPoolName:
+    Type: String
+    Default: DeepfakeUsers
+  AppClientName:
+    Type: String
+    Default: deepfake-web-client
+  EnableCognitoDomain:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+  DomainPrefix:
+    Type: String
+    Default: deepfake-tool-demo
+  CallbackURL:
+    Type: String
+    Default: http://localhost:8080
+  LogoutURL:
+    Type: String
+    Default: http://localhost:8080
+
+  # API Gateway (HTTP API) to front the Engine
+  EngineOriginUrl:
+    Type: String
+    Default: http://localhost:8001
+    Description: Publicly reachable origin URL of the Deepfake Detection Engine (e.g., https://api.example.com)
+  ApiStageName:
+    Type: String
+    Default: v1
+  ApiCorsAllowOrigins:
+    Type: CommaDelimitedList
+    Default: '*'
+    Description: Comma-delimited list of allowed origins for CORS
+  RequireApiJwt:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'true'
+
+  # Network + EC2 parameters
+  CreateVpcEc2:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'true'
+    Description: Whether to create a VPC with public subnets and an EC2 instance that auto-runs Docker Compose
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+  InstanceType:
+    Type: String
+    Default: t3.large
+    Description: Instance type for EC2 host (CPU intensive workloads may need larger instances; GPU not covered here)
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: ''
+    Description: Optional SSH key pair name; leave empty to disable SSH
+  AllowSSH:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'false'
+  SshIngressCidr:
+    Type: String
+    Default: 0.0.0.0/0
+  # Optional: Import an EC2 KeyPair from a provided public key
+  ImportKeyPair:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'false'
+    Description: If true, import an EC2 KeyPair using the provided PublicKeyMaterial and name
+  ImportedKeyName:
+    Type: String
+    Default: main-Instance-key
+    Description: KeyPair name to create/import when ImportKeyPair is true
+  PublicKeyMaterial:
+    Type: String
+    Default: ''
+    Description: SSH public key material (e.g., contents of id_rsa.pub). Required when ImportKeyPair is true
+  WebsiteHostPort:
+    Type: Number
+    Default: 80
+    Description: Host port to expose the Website container (maps to container port 80)
+  EngineHostPort:
+    Type: Number
+    Default: 8001
+    Description: Host port to expose the Engine container (maps to container port 8000)
+  CreditsHostPort:
+    Type: Number
+    Default: 8003
+    Description: Host port to expose the Credits container (maps to container port 8002)
+  OpenEnginePort:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'false'
+    Description: Whether to allow public access to the Engine host port (recommended false when fronted by API Gateway)
+  OpenCreditsPort:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'false'
+    Description: Whether to allow public access to the Credits host port
+  AllowedHttpCidr:
+    Type: String
+    Default: 0.0.0.0/0
+  UseInstanceAsApiOrigin:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'true'
+    Description: If true and EC2 is created, API Gateway will proxy to the instance Elastic IP and EngineHostPort
+  RepoUrl:
+    Type: String
+    Default: https://github.com/Chetankhaped/Pentacore-Solutions.git
+    Description: Git repository URL containing the End-to-End folder
+  RepoRef:
+    Type: String
+    Default: master
+    Description: Git branch or tag to checkout
+  AppSubdir:
+    Type: String
+    Default: AWS Cloud Deployment/Version1
+    Description: Path within the repo to the End-to-End compose folder (spaces allowed)
+
+  # AMI (from SSM Parameter)
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64'
+
+  # Custom domain (ALB + ACM + Route53) for Website and Credits
+  CreateAlb:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'true'
+    Description: Whether to create an internet-facing ALB with HTTPS and Route53 record for the website
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route53 Hosted Zone ID for your root domain (e.g., Z123ABC456DEF)
+  RootDomainName:
+    Type: String
+    Default: pentacoresolutions.in
+    Description: Your root domain name in Route53
+  SubdomainName:
+    Type: String
+    Default: deepfake-analyzer-tool
+    Description: Subdomain to host the website (FQDN will be <SubdomainName>.<RootDomainName>)
+
+  # IAM user (optional, for local/dev engine access)
+  CreateIamUser:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+  IamUserName:
+    Type: String
+    Default: deepfake-engine-user
+
+Conditions:
+  UseDomain: !Equals [ !Ref EnableCognitoDomain, 'true' ]
+  CreateUser: !Equals [ !Ref CreateIamUser, 'true' ]
+  RequireJwt: !Equals [ !Ref RequireApiJwt, 'true' ]
+  CreateNetwork: !Equals [ !Ref CreateVpcEc2, 'true' ]
+  HasKey: !Not [ !Equals [ !Ref KeyName, '' ] ]
+  OpenEngine: !Equals [ !Ref OpenEnginePort, 'true' ]
+  OpenCredits: !Equals [ !Ref OpenCreditsPort, 'true' ]
+  UseEc2Origin: !And [ !Equals [ !Ref UseInstanceAsApiOrigin, 'true' ], !Equals [ !Ref CreateVpcEc2, 'true' ] ]
+  AllowSSHCond: !Equals [ !Ref AllowSSH, 'true' ]
+  EngineIngress: !Or [
+    !Equals [ !Ref OpenEnginePort, 'true' ],
+    !And [ !Equals [ !Ref UseInstanceAsApiOrigin, 'true' ], !Equals [ !Ref CreateVpcEc2, 'true' ] ]
+  ]
+  UseAlb: !Equals [ !Ref CreateAlb, 'true' ]
+  HasZone: !Not [ !Equals [ !Ref HostedZoneId, '' ] ]
+  # Import key only when requested and public key is provided
+  DoImportKey: !And [ !Equals [ !Ref ImportKeyPair, 'true' ], !Not [ !Equals [ !Ref PublicKeyMaterial, '' ] ] ]
+
+Resources:
+  # --------------------------
+  # Network (VPC + Public Subnets)
+  # --------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateNetwork
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-vpc"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateNetwork
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-igw"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateNetwork
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Condition: CreateNetwork
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-public-a"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Condition: CreateNetwork
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet2Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-public-b"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateNetwork
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-public-rt"
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateNetwork
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNetwork
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  SubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNetwork
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  # --------------------------
+  # Security Groups
+  # --------------------------
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateNetwork
+    Properties:
+      GroupDescription: Security group for Deepfake Analyzer EC2
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - !If
+          - UseAlb
+          - { IpProtocol: tcp, FromPort: !Ref WebsiteHostPort, ToPort: !Ref WebsiteHostPort, SourceSecurityGroupId: !Ref AlbSecurityGroup }
+          - { IpProtocol: tcp, FromPort: !Ref WebsiteHostPort, ToPort: !Ref WebsiteHostPort, CidrIp: !Ref AllowedHttpCidr }
+        # Allow ALB to reach Engine port when ALB is enabled (for /engine/* path)
+        - !If
+          - UseAlb
+          - { IpProtocol: tcp, FromPort: !Ref EngineHostPort, ToPort: !Ref EngineHostPort, SourceSecurityGroupId: !Ref AlbSecurityGroup }
+          - { Ref: AWS::NoValue }
+        - !If
+          - EngineIngress
+          - { IpProtocol: tcp, FromPort: !Ref EngineHostPort, ToPort: !Ref EngineHostPort, CidrIp: !Ref AllowedHttpCidr }
+          - { Ref: AWS::NoValue }
+        # Credits port: allow from ALB when ALB enabled, else optionally public
+        - !If
+          - UseAlb
+          - { IpProtocol: tcp, FromPort: !Ref CreditsHostPort, ToPort: !Ref CreditsHostPort, SourceSecurityGroupId: !Ref AlbSecurityGroup }
+          - { Ref: AWS::NoValue }
+        - !If
+          - OpenCredits
+          - { IpProtocol: tcp, FromPort: !Ref CreditsHostPort, ToPort: !Ref CreditsHostPort, CidrIp: !Ref AllowedHttpCidr }
+          - { Ref: AWS::NoValue }
+        - !If
+          - AllowSSHCond
+          - { IpProtocol: tcp, FromPort: 22, ToPort: 22, CidrIp: !Ref SshIngressCidr }
+          - { Ref: AWS::NoValue }
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-sg"
+
+  # --------------------------
+  # IAM Role for EC2 instance (S3 + basic)
+  # --------------------------
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Condition: CreateNetwork
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: '/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-ec2-role"
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: CreateNetwork
+    Properties:
+      Roles: [ !Ref Ec2Role ]
+      Path: '/'
+
+  # --------------------------
+  # EC2 + EIP
+  # --------------------------
+  Ec2ImportedKeyPair:
+    Type: AWS::EC2::KeyPair
+    Condition: DoImportKey
+    Properties:
+      KeyName: !Ref ImportedKeyName
+      PublicKeyMaterial: !Ref PublicKeyMaterial
+
+  AppEip:
+    Type: AWS::EC2::EIP
+    Condition: CreateNetwork
+    Properties:
+      Domain: vpc
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Condition: CreateNetwork
+    Properties:
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      InstanceType: !Ref InstanceType
+      KeyName: !If [ HasKey, !Ref KeyName, !If [ DoImportKey, !Ref Ec2ImportedKeyPair, !Ref "AWS::NoValue" ] ]
+      ImageId: !Ref LatestAmiId
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: [ !Ref AppSecurityGroup ]
+          SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-ec2"
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash -xe
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              dnf update -y
+              dnf install -y docker git unzip openssh-clients awscli
+              # Install SSM Agent (Amazon Linux 2023)
+              dnf install -y amazon-ssm-agent || true
+              systemctl enable amazon-ssm-agent || true
+              systemctl start amazon-ssm-agent || true
+              systemctl enable docker
+              systemctl start docker
+              usermod -aG docker ec2-user || true
+              # docker compose plugin
+              dnf install -y docker-compose-plugin
+              
+              # Prepare app directory
+              mkdir -p /opt/app
+
+              # Create helper script to finalize setup after manual clone
+              cat > /usr/local/bin/run-compose.sh << 'EOS'
+              #!/bin/bash
+              set -euo pipefail
+
+              APP_DIR="/opt/app/repo"
+              APP_SUBDIR="${AppSubdir}"
+
+              if [ ! -d "$APP_DIR" ]; then
+                echo "ERROR: $APP_DIR not found. Please clone your repo to $APP_DIR first."
+                echo "Example: git clone ${RepoUrl} $APP_DIR && cd $APP_DIR && git checkout ${RepoRef}"
+                exit 1
+              fi
+
+              cd "$APP_DIR"
+              # optional: ensure branch/ref
+              git fetch --all || true
+              git checkout "${RepoRef}" || true
+
+              # Navigate to subdir (may contain spaces)
+              cd "$APP_SUBDIR"
+
+              # Compose root .env
+              cat > .env << EOF
+              WEBSITE_HOST_PORT=${WebsiteHostPort}
+              ENGINE_HOST_PORT=${EngineHostPort}
+              CREDITS_HOST_PORT=${CreditsHostPort}
+              CREDITS_ENABLED=true
+              COGNITO_ENFORCE=true
+              # Allow website origin
+              ALLOWED_ORIGINS=${AllowedOrigins}
+              # Website will call Engine via API Gateway by default
+              ENGINE_BASE_URL=${EngineBaseUrl}
+              ENGINE_UPLOAD_BASE_URL=${EngineUploadBaseUrl}
+              # Engine path prefix (strip when behind ALB /engine/*)
+              BASE_PATH_PREFIX=${EngineBasePath}
+              CREDITS_BASE_URL=${CreditsBaseUrl}
+              # Website OIDC (used to generate config.json)
+              COGNITO_AUTHORITY=https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              COGNITO_CLIENT_ID=${UserPoolClient}
+              OIDC_REDIRECT_PATH=/index.html
+              # Hosted UI logout domain (if Cognito domain enabled)
+              COGNITO_LOGOUT_DOMAIN=${CognitoLogoutDomain}
+              EOF
+
+              # Engine AWS env (no static credentials; use instance profile)
+              mkdir -p AWS
+              cat > AWS/.env << EOF
+              AWS_ACCESS_KEY_ID=
+              AWS_SECRET_ACCESS_KEY=
+              AWS_SESSION_TOKEN=
+              AWS_REGION=${AWS::Region}
+              S3_BUCKET_NAME=${ArtifactsBucket}
+              S3_ENABLED=true
+              S3_PREFIX=${S3Prefix}
+              COGNITO_REGION=${AWS::Region}
+              COGNITO_USER_POOL_ID=${UserPool}
+              COGNITO_USER_POOL_CLIENT_ID=${UserPoolClient}
+              EOF
+
+              # Bring up the stack
+              /usr/bin/docker compose pull || true
+              /usr/bin/docker compose up -d --build
+              EOS
+              chmod +x /usr/local/bin/run-compose.sh
+              echo "Created /usr/local/bin/run-compose.sh. After cloning your repo to /opt/app/repo, run: sudo /usr/local/bin/run-compose.sh" | tee -a /var/log/user-data.log
+            - {
+                AllowedOrigins: !If [ UseAlb, !Sub 'https://${SubdomainName}.${RootDomainName}', !Sub 'http://${AppEip.PublicIp}:${WebsiteHostPort}' ],
+                CreditsBaseUrl: !If [ UseAlb, !Sub 'https://${SubdomainName}.${RootDomainName}/credits', !Sub 'http://${AppEip.PublicIp}:${CreditsHostPort}' ],
+                EngineBaseUrl: !If [ UseAlb, !Sub 'https://${SubdomainName}.${RootDomainName}/engine', !Sub '${HttpApi.ApiEndpoint}/${ApiStageName}' ],
+                EngineUploadBaseUrl: !If [ UseAlb, !Sub 'https://${SubdomainName}.${RootDomainName}/engine', !Sub '${HttpApi.ApiEndpoint}/${ApiStageName}' ],
+                EngineBasePath: !If [ UseAlb, '/engine', '' ],
+                CognitoLogoutDomain: !If [ UseDomain, !Sub 'https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com', '' ]
+              }
+
+
+  AppEipAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Condition: CreateNetwork
+    Properties:
+      AllocationId: !GetAtt AppEip.AllocationId
+      InstanceId: !Ref AppInstance
+
+  # --------------------------
+  # ALB + ACM + Route53 (Website + Credits path)
+  # --------------------------
+  WebsiteCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: UseAlb
+    Properties:
+      DomainName: !Sub '${SubdomainName}.${RootDomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '${SubdomainName}.${RootDomainName}'
+          HostedZoneId: !Ref HostedZoneId
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: UseAlb
+    Properties:
+      GroupDescription: Security group for public ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${StackNamespace}-alb-sg'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: UseAlb
+    Properties:
+      Name: !Sub '${StackNamespace}-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets: [ !Ref PublicSubnetA, !Ref PublicSubnetB ]
+      SecurityGroups: [ !Ref AlbSecurityGroup ]
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '600'
+
+  WebsiteTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: UseAlb
+    Properties:
+      Name: !Sub '${StackNamespace}-tg-web'
+      VpcId: !Ref VPC
+      Protocol: HTTP
+      Port: !Ref WebsiteHostPort
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: '/'
+      Matcher:
+        HttpCode: '200-399'
+      Targets:
+        - Id: !Ref AppInstance
+          Port: !Ref WebsiteHostPort
+
+  CreditsTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: UseAlb
+    Properties:
+      Name: !Sub '${StackNamespace}-tg-cred'
+      VpcId: !Ref VPC
+      Protocol: HTTP
+      Port: !Ref CreditsHostPort
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: '/health'
+      Matcher:
+        HttpCode: '200-499'
+      Targets:
+        - Id: !Ref AppInstance
+          Port: !Ref CreditsHostPort
+
+  EngineTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: UseAlb
+    Properties:
+      Name: !Sub '${StackNamespace}-tg-engine'
+      VpcId: !Ref VPC
+      Protocol: HTTP
+      Port: !Ref EngineHostPort
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: '/health'
+      Matcher:
+        HttpCode: '200-499'
+      Targets:
+        - Id: !Ref AppInstance
+          Port: !Ref EngineHostPort
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: UseAlb
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref WebsiteCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebsiteTargetGroup
+
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: UseAlb
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+
+  CreditsRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: UseAlb
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values: ['/credits/*']
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref CreditsTargetGroup
+
+  EngineRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: UseAlb
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 15
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values: ['/engine/*']
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref EngineTargetGroup
+
+  WebsiteRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: UseAlb
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '${SubdomainName}.${RootDomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+  # S3 bucket for engine artifacts
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUpload
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-artifacts"
+
+  # Lifecycle now configured directly on the bucket above
+
+  # Bucket policy placeholder (tighten if you expose OAI/CloudFront later)
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${S3BucketName}'
+              - !Sub 'arn:aws:s3:::${S3BucketName}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      AutoVerifiedAttributes: [ email ]
+      UsernameAttributes: [ email ]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+  # Cognito App Client
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref AppClientName
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - implicit
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      CallbackURLs:
+        - !If [ UseDomain, !Sub 'https://${SubdomainName}.${RootDomainName}/index.html', !Ref CallbackURL ]
+      LogoutURLs:
+        - !If [ UseDomain, !Sub 'https://${SubdomainName}.${RootDomainName}/index.html', !Ref LogoutURL ]
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # Optional Hosted UI domain
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: UseDomain
+    Properties:
+      Domain: !Ref DomainPrefix
+      UserPoolId: !Ref UserPool
+
+  # Optional IAM user for local/dev engine to access this bucket
+  EngineUser:
+    Type: AWS::IAM::User
+    Condition: CreateUser
+    Properties:
+      UserName: !Ref IamUserName
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackNamespace}-engine-user"
+
+  EngineUserPolicy:
+    Type: AWS::IAM::Policy
+    Condition: CreateUser
+    Properties:
+      PolicyName: !Sub "${StackNamespace}-engine-s3-policy"
+      Users:
+        - !Ref EngineUser
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:AbortMultipartUpload
+            Resource: !Sub 'arn:aws:s3:::${S3BucketName}/${S3Prefix}/*'
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !Sub 'arn:aws:s3:::${S3BucketName}'
+            Condition:
+              StringLike:
+                s3:prefix: !Sub '${S3Prefix}/*'
+
+  EngineUserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Condition: CreateUser
+    Properties:
+      UserName: !Ref EngineUser
+
+  # API Gateway HTTP API (v2)
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${StackNamespace}-http-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: !Ref ApiCorsAllowOrigins
+        AllowMethods: [ GET, POST, PUT, PATCH, DELETE, OPTIONS ]
+        AllowHeaders: [ '*' ]
+        MaxAge: 600
+
+  EngineIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: !If
+        - UseEc2Origin
+        - !Sub 'http://${AppEip.PublicIp}:${EngineHostPort}'
+        - !Ref EngineOriginUrl
+      PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 29000
+      Description: Proxy to Deepfake Detection Engine
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Condition: RequireJwt
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      IdentitySource:
+        - "$request.header.Authorization"
+      Name: !Sub "${StackNamespace}-cognito-authorizer"
+      JwtConfiguration:
+        Audience: [ !Ref UserPoolClient ]
+        Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+
+  # Routes: root, proxy, and a public health route
+  RootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'ANY /'
+      Target: !Join [ '/', [ 'integrations', !Ref EngineIntegration ] ]
+      AuthorizationType: !If [ RequireJwt, JWT, NONE ]
+      AuthorizerId: !If [ RequireJwt, !Ref CognitoAuthorizer, !Ref 'AWS::NoValue' ]
+
+  ProxyRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'ANY /{proxy+}'
+      Target: !Join [ '/', [ 'integrations', !Ref EngineIntegration ] ]
+      AuthorizationType: !If [ RequireJwt, JWT, NONE ]
+      AuthorizerId: !If [ RequireJwt, !Ref CognitoAuthorizer, !Ref 'AWS::NoValue' ]
+
+  HealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'ANY /health'
+      Target: !Join [ '/', [ 'integrations', !Ref EngineIntegration ] ]
+      AuthorizationType: NONE
+
+  # Allow unauthenticated CORS preflight requests to succeed (avoid 401 on OPTIONS)
+  OptionsProxyRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'OPTIONS /{proxy+}'
+      Target: !Join [ '/', [ 'integrations', !Ref EngineIntegration ] ]
+      AuthorizationType: NONE
+
+  OptionsRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'OPTIONS /'
+      Target: !Join [ '/', [ 'integrations', !Ref EngineIntegration ] ]
+      AuthorizationType: NONE
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: !Ref ApiStageName
+      AutoDeploy: true
+
+Outputs:
+  # S3
+  BucketName:
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+  BucketRegion:
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketRegion'
+  Prefix:
+    Value: !Ref S3Prefix
+    Export:
+      Name: !Sub '${AWS::StackName}-Prefix'
+
+  # Cognito
+  UserPoolId:
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
+  UserPoolDomain:
+    Condition: UseDomain
+    Value: !Ref UserPoolDomain
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolDomain'
+
+  CognitoHostedDomain:
+    Condition: UseDomain
+    Value: !Sub 'https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-CognitoHostedDomain'
+
+  # IAM user outputs (Note: SecretAccessKey only available at creation time)
+  AccessKeyId:
+    Condition: CreateUser
+    Value: !Ref EngineUserAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessKeyId'
+  SecretAccessKey:
+    Condition: CreateUser
+    Value: !GetAtt EngineUserAccessKey.SecretAccessKey
+    Description: Store this securely; it cannot be retrieved later.
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretAccessKey'
+
+  # API Gateway
+  HttpApiId:
+    Value: !Ref HttpApi
+    Export:
+      Name: !Sub '${AWS::StackName}-HttpApiId'
+  HttpApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-HttpApiEndpoint'
+  HttpApiInvokeUrl:
+    Value: !Sub '${HttpApi.ApiEndpoint}/${ApiStageName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-HttpApiInvokeUrl'
+
+  # EC2 / VPC Outputs
+  VpcId:
+    Condition: CreateNetwork
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcId'
+  PublicSubnetAId:
+    Condition: CreateNetwork
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnetAId'
+  AppInstanceId:
+    Condition: CreateNetwork
+    Value: !Ref AppInstance
+    Export:
+      Name: !Sub '${AWS::StackName}-AppInstanceId'
+  AppPublicIp:
+    Condition: CreateNetwork
+    Value: !GetAtt AppEip.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-AppPublicIp'
+  WebsiteURL:
+    Condition: CreateNetwork
+    Value: !If [ UseAlb, !Sub 'https://${SubdomainName}.${RootDomainName}', !Sub 'http://${AppEip.PublicIp}' ]
+    Export:
+      Name: !Sub '${AWS::StackName}-WebsiteURL'
+  EngineDirectURL:
+    Condition: CreateNetwork
+    Value: !Sub 'http://${AppEip.PublicIp}:${EngineHostPort}'
+    Export:
+      Name: !Sub '${AWS::StackName}-EngineDirectURL'
+  CreditsDirectURL:
+    Condition: CreateNetwork
+    Value: !Sub 'http://${AppEip.PublicIp}:${CreditsHostPort}'
+    Export:
+      Name: !Sub '${AWS::StackName}-CreditsDirectURL'
+  WebsiteDomainName:
+    Condition: UseAlb
+    Value: !Sub '${SubdomainName}.${RootDomainName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-WebsiteDomainName'

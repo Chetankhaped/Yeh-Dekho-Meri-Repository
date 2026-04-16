@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deepfake Analyzer • API Docs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="icon" href="./assets/deepfake_analyzer_tool_logo.png">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body class="has-bg">
+    <canvas id="bg" aria-hidden="true"></canvas>
+    <div class="page fade-in">
+      <header class="topbar glass">
+        <div class="brand">
+          <img src="./assets/deepfake_analyzer_tool_logo.png" alt="Logo">
+          <div>
+            <div class="brand-title">Deepfake Analyzer Tool</div>
+            <div class="brand-sub">API Documentation</div>
+          </div>
+        </div>
+        <div class="actions">
+          <span id="healthStatus" class="pill">Checking…</span>
+          <a class="btn mini" href="./deepfake_analyzer_tool.html">Back to App</a>
+        </div>
+      </header>
+
+      <main class="main">
+        <div class="card glass pop">
+          <h3>Quickstart</h3>
+          <p class="muted">Endpoints are discovered from <code>runtime-config.json</code>. Toggle JWT to attach your Cognito ID token.</p>
+          <div class="row">
+            <label class="label">Use JWT Authorization</label>
+            <input type="checkbox" id="useJwt">
+            <span id="jwtStatus" class="muted"></span>
+          </div>
+          <div class="row">
+            <label class="label">API Key / User ID</label>
+            <input id="apiKey" placeholder="YOUR_API_KEY">
+            <button id="btnGenKey" class="btn mini">Generate</button>
+            <button id="btnCopyKey" class="btn mini">Copy</button>
+            <span id="keyStatus" class="muted"></span>
+          </div>
+          <div class="row">
+            <button id="btnQuickTry" class="btn mini">Quick Try: Engine Health</button>
+            <span id="quickTryStatus" class="muted"></span>
+          </div>
+          <div class="row">
+            <button id="btnQuickCredits" class="btn mini">Quick Try: Credits Balance</button>
+            <span id="quickCreditsStatus" class="muted"></span>
+          </div>
+          <div class="row">
+            <button id="btnDownloadPostman" class="btn mini">Download Postman Collection</button>
+            <span id="postmanStatus" class="muted"></span>
+          </div>
+
+          <h4>cURL (video)</h4>
+          <pre class="code"><code class="tmpl" data-template="curl -X POST {{BASE}}/predict -F file=@/path/to/video.mp4 -F explain=true -F user_id={{USER_ID}}{{AUTH_CURL}}"></code></pre>
+          <h4>JavaScript (fetch)</h4>
+          <pre class="code"><code class="tmpl" data-template="const fd=new FormData(); fd.append('file', file); fd.append('explain','true'); fd.append('user_id','{{USER_ID}}'); fetch('{{BASE}}/predict', { method:'POST'{{AUTH_FETCH}}, body: fd });"></code></pre>
+          <h4>Node (axios)</h4>
+          <pre class="code"><code class="tmpl" data-template="const axios=require('axios'); const FormData=require('form-data'); const fs=require('fs'); const fd=new FormData(); fd.append('file', fs.createReadStream('video.mp4')); fd.append('explain','true'); fd.append('user_id','{{USER_ID}}'); axios.post('{{BASE}}/predict', fd, { headers: { ...fd.getHeaders(){{AUTH_NODE}} } });"></code></pre>
+
+          <h4>Python (requests)</h4>
+          <pre class="code"><code class="tmpl" data-template="import requests\nfiles={'file': open('video.mp4','rb')}\ndata={'explain':'true','user_id':'{{USER_ID}}'}\nheaders={}{{#IF_AUTH}}\nheaders['Authorization']='Bearer TOKEN'{{/IF_AUTH}}\nr=requests.post('{{BASE}}/predict', files=files, data=data, headers=headers)\nprint(r.status_code, r.text)"></code></pre>
+
+          <h4>Credits Service</h4>
+          <div class="row">
+            <button id="btnRegisterUser" class="btn mini">Register</button>
+            <button id="btnCheckBalance" class="btn mini">Balance</button>
+            <button id="btnEarnAd" class="btn mini">Earn +1</button>
+            <span id="creditsOpStatus" class="muted"></span>
+          </div>
+        </div>
+      </main>
+
+      <footer class="footer">
+        <span>Powered by Pentacore Solutions • <span id="year"></span> All rights reserved.</span>
+      </footer>
+    </div>
+    <script>
+      (function(){
+        const c=document.getElementById('bg'); const ctx=c.getContext('2d'); let w,h,px=window.devicePixelRatio||1; function size(){ w=c.width=innerWidth*px; h=c.height=innerHeight*px; c.style.width=innerWidth+'px'; c.style.height=innerHeight+'px'; } size(); addEventListener('resize', size);
+        const N=60; const pts=Array.from({length:N},()=>({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.35*px,vy:(Math.random()-.5)*.35*px}));
+        (function loop(){ ctx.clearRect(0,0,w,h); ctx.strokeStyle='rgba(148,163,184,0.08)'; ctx.lineWidth=px; for(const p of pts){ p.x+=p.vx;p.y+=p.vy; if(p.x<0||p.x>w) p.vx*=-1; if(p.y<0||p.y>h) p.vy*=-1; }
+          for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){ const a=pts[i],b=pts[j]; const dx=a.x-b.x,dy=a.y-b.y,d=dx*dx+dy*dy; if(d<(140*px)**2){ const t=1-d/((140*px)**2); ctx.globalAlpha=t*.7; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
+          ctx.globalAlpha=1; requestAnimationFrame(loop); })();
+      })();
+      document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+    <script src="./api-docs.js"></script>
+  </body>
+  </html>

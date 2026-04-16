@@ -1,0 +1,25 @@
+tmp/
+__pycache__/
+*.pyc
+.user_cache/
+.git/
+.gitignore
+node_modules/
+user_data/
+**/.DS_Store
+**/Thumbs.db
+# Ignore everything by default
+**
+
+# Allow these
+!Dockerfile
+!app/**
+!best_pinpoint_model_antisocial.pth
+
+# Extra ignores
+*.ipynb
+__pycache__/
+.venv/
+*.log
+*.tmp
+.tmp*/

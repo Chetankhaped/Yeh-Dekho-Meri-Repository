@@ -1,0 +1,77 @@
+######################################
+# OS & Editors
+######################################
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+######################################
+# Secrets & Env files (do not commit)
+######################################
+*.pem
+*.ppk
+*.key
+*.crt
+*.p12
+.env
+**/.env
+!**/.env.example
+*.env.local
+.envrc
+/AWS/.env
+/Credits_And_Payment/.env
+/Deepfake_Detection_Engine/.env
+/Deepfake_Analyzer_Tool_Website/.env
+
+######################################
+# Python
+######################################
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+.coverage
+htmlcov/
+dist/
+build/
+
+######################################
+# Node / Frontend
+######################################
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+build/
+
+######################################
+# Docker
+######################################
+**/.docker/**
+docker-compose.override.yml
+
+######################################
+# Local data & databases
+######################################
+/Deepfake_Detection_Engine/user_data/
+*.db
+*.sqlite
+*.sqlite3
+
+######################################
+# Logs
+######################################
+logs/
+*.log
+
+######################################
+# Website runtime configs (generated at runtime; tracked files remain tracked)
+######################################
+Deepfake_Analyzer_Tool_Website/runtime-config.json
+Deepfake_Analyzer_Tool_Website/config.json

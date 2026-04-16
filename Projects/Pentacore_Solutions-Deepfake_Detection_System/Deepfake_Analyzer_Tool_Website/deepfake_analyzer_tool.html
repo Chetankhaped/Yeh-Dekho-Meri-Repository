@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deepfake Analyzer Tool</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="icon" href="./assets/deepfake_analyzer_tool_logo.png">
+    <link rel="stylesheet" href="./styles.css">
+    <script defer src="./oidc.js"></script>
+    <script defer src="./multi-model-visualizations.js"></script>
+    <script defer src="./enhanced-results.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body class="has-bg">
+    <canvas id="bg" aria-hidden="true"></canvas>
+    <div class="page fade-in">
+      <header class="topbar glass">
+        <div class="brand">
+          <img src="./assets/deepfake_analyzer_tool_logo.png" alt="Logo">
+          <div>
+            <div class="brand-title">Deepfake Analyzer Tool</div>
+            <div class="brand-sub">by Pentacore Solutions</div>
+          </div>
+        </div>
+        <nav class="nav">
+          <a class="nav-link active" data-tab="dashboard">Dashboard</a>
+          <a class="nav-link" data-tab="api">API Documentation</a>
+          <a class="nav-link" data-tab="about">About</a>
+          <a class="nav-link" data-tab="settings">Settings</a>
+          <a class="nav-link" data-tab="terms">Terms</a>
+        </nav>
+        <div class="actions">
+          <button id="btnTheme" class="btn mini" title="Toggle theme">Light</button>
+          <span id="userBadge" class="pill">Guest</span>
+          <span id="healthStatus" class="pill">Checking…</span>
+          <button id="btnLogout" class="btn mini danger">Logout</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <!-- Dashboard Tab -->
+        <section id="tab-dashboard" class="tab active">
+          <div class="card glass pop">
+            <h3>Upload & Analyze</h3>
+            <div class="uploader">
+              <div class="u-box">
+                <div class="drop" id="drop" title="Drag & drop a video or image. Supported: MP4, MOV, AVI, MKV, WEBM, JPG, JPEG, PNG, BMP, WEBP">
+                  <input id="fileInput" type="file" accept="video/*,image/*" hidden>
+                  <div class="drop-inner">
+                    <div class="u-hero">📤</div>
+                    <div class="u-title">Drag & drop a file here</div>
+                    <div class="u-sub">or</div>
+                    <button class="btn mini" id="btnBrowse" title="Browse for a supported video or image">Choose File</button>
+                    <div class="u-hints upload-hints">
+                      <span class="pill" title="MP4, MOV, AVI, MKV, WEBM; JPG, JPEG, PNG, BMP, WEBP">Video & Image</span>
+                      <span class="pill" title="Only images render a thumbnail preview before analysis">Preview: images only</span>
+                      <span class="pill" title="Short clips (≤ ~10s) analyze faster and visualize better">Tip: use short clips</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="u-meta">
+                <div class="u-file">
+                  <span id="fileName" class="file-name pill" title="Selected file">No file selected</span>
+                  <span id="fileInfo" class="muted"></span>
+                </div>
+                <div id="preview" class="preview"></div>
+                <div class="u-actions">
+                  <button id="btnAnalyze" class="btn" title="Select a supported file to analyze" disabled>Analyze</button>
+                  <button id="btnCancelUpload" class="btn mini danger" title="Cancel the in-progress upload" hidden>Cancel</button>
+                  <span id="analyzeStatus" class="muted"></span>
+                </div>
+                <div id="uploadProgress" class="progress hidden" aria-hidden="true">
+                  <div class="progress-head">
+                    <span id="uploadPhase" class="muted">Uploading…</span>
+                    <span id="uploadPercent" class="muted">0%</span>
+                  </div>
+                  <div class="progress-track"><div id="uploadProgressBar" class="progress-bar" style="width:0%"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video/Image Technical Details Card -->
+          <div id="technicalDetailsCard" class="card glass pop" style="display: none;">
+            <h3>🔧 Video/Image Technical Details</h3>
+            <div id="technicalDetailsContent"></div>
+          </div>
+
+          <div class="card glass pop">
+            <h3>Results</h3>
+            <div class="row" style="justify-content:center; gap:8px; margin-top:4px">
+              <button id="btnDownloadZip" class="btn mini" title="Download all outputs as a ZIP" hidden>Download ZIP</button>
+              <button id="btnExplain" class="btn mini" title="How to read these results" hidden>Result Explanation</button>
+            </div>
+            <div id="results" class="results"></div>
+            
+            <!-- Multi-Model Ensemble Visualizations -->
+            <div id="ensembleResults" class="ensemble-results" style="display:none; margin-top: 24px;">
+              <h4 style="margin-bottom: 16px; text-align: center;">🤖 Multi-Model Ensemble Analysis</h4>
+              
+              <!-- Manipulation Gauge -->
+              <div style="margin-bottom: 24px;">
+                <h5 style="margin-bottom: 8px;">Overall Manipulation Probability</h5>
+                <canvas id="manipulationGauge" width="300" height="300" style="display: block; margin: 0 auto;"></canvas>
+              </div>
+              
+              <!-- Model Comparison Bars -->
+              <div style="margin-bottom: 24px;">
+                <h5 style="margin-bottom: 8px;">Individual Model Predictions</h5>
+                <canvas id="modelComparisonBars" width="600" height="400" style="display: block; margin: 0 auto; max-width: 100%;"></canvas>
+              </div>
+              
+              <!-- Agreement Heatmap -->
+              <div style="margin-bottom: 24px;">
+                <h5 style="margin-bottom: 8px;">Model Agreement Matrix</h5>
+                <canvas id="agreementHeatmap" width="500" height="500" style="display: block; margin: 0 auto; max-width: 100%;"></canvas>
+              </div>
+              
+              <!-- Radar Chart -->
+              <div style="margin-bottom: 24px;">
+                <h5 style="margin-bottom: 8px;">Detection Breakdown</h5>
+                <canvas id="radarChart" width="400" height="400" style="display: block; margin: 0 auto; max-width: 100%;"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="card glass pop">
+            <h3>History</h3>
+            <div class="row">
+              <button id="btnRefreshHistory" class="btn mini">Refresh History</button>
+              <button id="btnDeleteAllHistory" class="btn mini danger">Delete All</button>
+              <span id="historyStatus" class="muted"></span>
+            </div>
+            <div id="history" class="history"></div>
+          </div>
+        </section>
+
+        <!-- API Docs Tab -->
+        <section id="tab-api" class="tab">
+          <div class="card glass pop">
+            <h3>API Documentation</h3>
+            <p>Use these examples to integrate Deepfake Analyzer into your app. Toggle auth, generate a user API key, and try a quick health check below.</p>
+            <!-- The API docs area is populated by api-docs.js; keep the controls within this tab only -->
+            <div class="row">
+              <label class="label">Use JWT Authorization</label>
+              <input type="checkbox" id="useJwt" />
+              <span id="jwtStatus" class="muted"></span>
+            </div>
+            <div class="row">
+              <label class="label">API Key / User ID</label>
+              <input id="apiKey" placeholder="YOUR_API_KEY" />
+              <button id="btnGenKey" class="btn mini">Generate</button>
+              <button id="btnCopyKey" class="btn mini">Copy</button>
+              <span id="keyStatus" class="muted"></span>
+            </div>
+            <div class="row">
+              <button id="btnQuickTry" class="btn mini">Quick Try: Engine Health</button>
+              <span id="quickTryStatus" class="muted"></span>
+            </div>
+            <div class="row">
+              <button id="btnQuickCredits" class="btn mini">Quick Try: Credits Balance</button>
+              <span id="quickCreditsStatus" class="muted"></span>
+            </div>
+            <div class="row">
+              <button id="btnDownloadPostman" class="btn mini">Download Postman Collection</button>
+              <span id="postmanStatus" class="muted"></span>
+            </div>
+            <h4>cURL (video)</h4>
+            <pre class="code"><code class="tmpl" data-template="curl -X POST {{BASE}}/predict -F file=@/path/to/video.mp4 -F explain=true -F user_id={{USER_ID}}{{AUTH_CURL}}"></code></pre>
+            <h4>JavaScript (fetch)</h4>
+            <pre class="code"><code class="tmpl" data-template="const fd=new FormData(); fd.append('file', file); fd.append('explain','true'); fd.append('user_id','{{USER_ID}}'); fetch('{{BASE}}/predict', { method:'POST'{{AUTH_FETCH}}, body: fd });"></code></pre>
+            <h4>Node (axios)</h4>
+            <pre class="code"><code class="tmpl" data-template="const axios=require('axios'); const FormData=require('form-data'); const fs=require('fs'); const fd=new FormData(); fd.append('file', fs.createReadStream('video.mp4')); fd.append('explain','true'); fd.append('user_id','{{USER_ID}}'); axios.post('{{BASE}}/predict', fd, { headers: { ...fd.getHeaders(){{AUTH_NODE}} } });"></code></pre>
+            <h4>Python (requests)</h4>
+            <pre class="code"><code class="tmpl" data-template="import requests\nfiles={'file': open('video.mp4','rb')}\ndata={'explain':'true','user_id':'{{USER_ID}}'}\nheaders={}{{#IF_AUTH}}\nheaders['Authorization']='Bearer TOKEN'{{/IF_AUTH}}\nr=requests.post('{{BASE}}/predict', files=files, data=data, headers=headers)\nprint(r.status_code, r.text)"></code></pre>
+
+            <h4>Credits Service</h4>
+            <div class="row">
+              <button id="btnRegisterUser" class="btn mini">Register</button>
+              <button id="btnCheckBalance" class="btn mini">Balance</button>
+              <button id="btnEarnAd" class="btn mini">Earn +1</button>
+              <span id="creditsOpStatus" class="muted"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- About Tab -->
+        <section id="tab-about" class="tab">
+          <div class="card glass pop">
+            <h3>About</h3>
+            <p>
+              Deepfake Analyzer is a research-grade demo that blends modern transformer-based audiovisual modeling with classical image processing to help assess media authenticity.
+              It visualizes what the model focuses on, how audio aligns with video, and how sharp (or blurry) frames are—so you can understand the “why” behind a verdict.
+            </p>
+            <div class="grid two" style="text-align:left">
+              <div>
+                <h4>Techniques used</h4>
+                <ul>
+                  <li><strong>AV Transformer (Model)</strong>: Cross-modal attention across audio and video streams</li>
+                  <li><strong>Grad-CAM Heatmaps</strong>: Highlights regions that influence the model decision</li>
+                  <li><strong>Mel Spectrogram & Waveform</strong>: Acoustic context for speech-driven cues</li>
+                  <li><strong>AV Sync Series</strong>: Correlation of audio RMS vs mouth openness</li>
+                  <li><strong>Laplacian Variance</strong>: Sharpness-based heuristic to flag defocus or smoothing artifacts</li>
+                </ul>
+              </div>
+              <div>
+                <h4>About this project</h4>
+                <ul>
+                  <li>Built as part of <strong>Major Project - 1</strong> by students of <strong>Artificial Intelligence & Data Science</strong>, 7th semester</li>
+                  <li>College: <strong>P.I.E.M.R., Indore</strong></li>
+                  <li>Deployable with Docker and AWS (Cognito, S3)</li>
+                  <li>Local guest mode supported; history can persist when storage is configured</li>
+                </ul>
+              </div>
+            </div>
+            <div class="row">
+              <button id="btnCreators" class="btn mini">Creators</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings Tab -->
+        <section id="tab-settings" class="tab">
+          <div class="card glass pop">
+            <h3>Settings</h3>
+            <div class="grid two">
+              <div>
+                <label class="label">Engine Base URL</label>
+                <input id="engineBase" placeholder="http://localhost:8001" />
+              </div>
+              <div>
+                <label class="label">Credits Base URL</label>
+                <input id="creditsBase" placeholder="http://localhost:8003" />
+              </div>
+            </div>
+            <div class="row">
+              <label class="label">Use JWT (send Authorization)</label>
+              <input type="checkbox" id="useJwtGlobal" />
+            </div>
+            <div class="row">
+              <button id="btnSaveSettings" class="btn">Save</button>
+              <span id="settingsStatus" class="muted"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Terms Tab -->
+        <section id="tab-terms" class="tab">
+          <div class="card glass pop">
+            <h3>Terms & Conditions</h3>
+            <p>By using this service you agree to the following:</p>
+            <ul>
+              <li>Uploaded content may be processed to produce visual explanations and metrics.</li>
+              <li>When S3 is enabled, artifacts are stored under a user-specific path with presigned-link access.</li>
+              <li>Models are probabilistic; use results as guidance, not absolute truth.</li>
+              <li>Do not upload unlawful or copyrighted material you do not own.</li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <!-- Explanation modal -->
+      <div id="explainModal" class="modal hidden" aria-hidden="true">
+        <div class="modal-backdrop" data-close="1"></div>
+        <div class="modal-content glass">
+          <div class="modal-head">
+            <h4>How to interpret the results</h4>
+            <button class="btn mini danger" id="btnCloseExplain">Close</button>
+          </div>
+          <div class="modal-body" id="explainBody">
+            <!-- Filled by app.js -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Creators modal -->
+      <div id="creatorsModal" class="modal hidden" aria-hidden="true">
+        <div class="modal-backdrop" data-close="1"></div>
+        <div class="modal-content glass">
+          <div class="modal-head">
+            <h4>Creators</h4>
+            <button class="btn mini danger" id="btnCloseCreators">Close</button>
+          </div>
+          <div class="modal-body">
+            <p class="muted">This tool was created as part of Major Project - 1 by students of Artificial Intelligence & Data Science, 7th semester, P.I.E.M.R., Indore.</p>
+            <ul>
+              <li>Aman</li>
+              <li>Chetan</li>
+              <li>Vanisha</li>
+              <li>Shashank</li>
+              <li>Yash</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer">
+        <span>Powered by Pentacore Solutions • <span id="year"></span> All rights reserved.</span>
+      </footer>
+    </div>
+  </body>
+  </html>
