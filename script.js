@@ -78,4 +78,85 @@ document.addEventListener('DOMContentLoaded', () => {
         el.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
         observer.observe(el);
     });
+
+    // ── Projects loader ──
+    loadProjects();
 });
+
+async function loadProjects() {
+    const terminal = document.getElementById('projects-terminal');
+    const spinner  = document.getElementById('projects-spinner');
+    const grid     = document.getElementById('projects-grid');
+
+    function termLog(text, cls = '') {
+        const p = document.createElement('p');
+        p.className = 'terminal-line' + (cls ? ' ' + cls : '');
+        p.innerHTML = '<span class="terminal-prompt">$</span> ' + escapeHtml(text);
+        terminal.appendChild(p);
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    try {
+        termLog('fetch assets/projects.json');
+        const res = await fetch('assets/projects.json');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const projects = await res.json();
+
+        if (spinner) spinner.remove();
+        termLog(`Loaded ${projects.length} project(s)`, 'terminal-success');
+        termLog('Rendering cards…', 'terminal-muted');
+
+        if (!projects.length) {
+            grid.innerHTML = '<p class="projects-empty">No projects found.</p>';
+            termLog('warn: manifest is empty', 'terminal-error');
+            return;
+        }
+
+        const repoBase = 'https://github.com/Chetankhaped/Yeh-Dekho-Meri-Repository/tree/master/';
+
+        projects.forEach((proj, i) => {
+            const card = document.createElement('div');
+            card.className = 'project-card';
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(16px)';
+
+            const techHtml = (proj.technologies || [])
+                .map(t => `<span class="tech-badge">${escapeHtml(t)}</span>`)
+                .join('');
+
+            let linksHtml = `<a class="project-link-source" href="${escapeHtml(repoBase + proj.path)}" target="_blank" rel="noopener"><i class="fas fa-code"></i> Source</a>`;
+            if (proj.link) {
+                linksHtml += `<a class="project-link-external" href="${escapeHtml(proj.link)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt"></i> Repo</a>`;
+            }
+
+            card.innerHTML = `
+                <h3>${escapeHtml(proj.name)}</h3>
+                <p class="project-desc">${escapeHtml(proj.description)}</p>
+                <div class="project-tech">${techHtml}</div>
+                <div class="project-links">${linksHtml}</div>
+            `;
+
+            grid.appendChild(card);
+
+            // stagger fade-in
+            setTimeout(() => {
+                card.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+                card.style.opacity = '1';
+                card.style.transform = 'translateY(0)';
+            }, 80 * i);
+        });
+
+        termLog('Done ✓', 'terminal-success');
+
+    } catch (err) {
+        if (spinner) spinner.remove();
+        termLog('Error: ' + err.message, 'terminal-error');
+        grid.innerHTML = '<p class="projects-empty">Failed to load projects. Run the build step first.</p>';
+    }
+}
+
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
