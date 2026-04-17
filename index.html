@@ -5,107 +5,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yeh-Dekho-Meri-Repository</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-    <nav class="navbar">
-        <div class="logo">YDMR</div>
-        <ul class="nav-links">
-            <li><a href="#home">Home</a></li>
-            <li><a href="#about">About</a></li>
-            <li><a href="#projects">Projects</a></li>
-            <li><a href="#features">Features</a></li>
-            <li><a href="#contact">Contact</a></li>
-        </ul>
-        <button id="theme-toggle" aria-label="Toggle Dark Mode">
-            <i class="fas fa-moon"></i>
-        </button>
-        <div class="hamburger">
-            <span class="bar"></span>
-            <span class="bar"></span>
-            <span class="bar"></span>
+<body data-theme="dark">
+
+    <!-- Animated background canvas -->
+    <canvas id="particles-canvas"></canvas>
+
+    <!-- Top bar -->
+    <nav class="topbar">
+        <a href="#" class="topbar-logo">
+            <span class="logo-bracket">&lt;</span>YDMR<span class="logo-bracket">/&gt;</span>
+        </a>
+        <div class="topbar-actions">
+            <a href="https://github.com/Chetankhaped" target="_blank" rel="noopener" class="topbar-link" title="GitHub">
+                <i class="fab fa-github"></i>
+            </a>
+            <button id="theme-toggle" aria-label="Toggle theme">
+                <i class="fas fa-sun"></i>
+            </button>
         </div>
     </nav>
 
-    <header id="home" class="hero">
-        <div class="hero-content">
-            <h1>Yeh-Dekho-Meri-Repository</h1>
-            <p>Welcome to a beautiful and interactive showcase.</p>
-            <a href="#about" class="cta-button">Explore More</a>
-        </div>
-        <div class="hero-visual">
-            <div class="floating-shape shape-1"></div>
-            <div class="floating-shape shape-2"></div>
+    <!-- Hero -->
+    <header class="hero">
+        <div class="hero-inner">
+            <p class="hero-greeting">Welcome to</p>
+            <h1 class="hero-name">Yeh-Dekho-Meri-Repository</h1>
+            <div class="hero-typed-wrap">
+                <span class="hero-cursor">$</span>
+                <span id="typed-text" class="hero-typed"></span>
+                <span class="blink-caret">|</span>
+            </div>
+            <p class="hero-sub">Engineering projects — from IoT security to AI-powered platforms.</p>
+            <a href="#projects" class="hero-cta">
+                <span>Explore Projects</span>
+                <i class="fas fa-arrow-down"></i>
+            </a>
         </div>
     </header>
 
-    <section id="about" class="section">
-        <div class="container">
-            <h2>About This Project</h2>
-            <p>This repository is a demonstration of how a simple idea can be transformed into an engaging web experience. We focus on clean design, interactivity, and performance.</p>
+    <!-- Stats ribbon -->
+    <div class="stats-ribbon">
+        <div class="stat" id="stat-projects">
+            <span class="stat-num">—</span>
+            <span class="stat-label">Projects</span>
         </div>
-    </section>
+        <div class="stat" id="stat-tech">
+            <span class="stat-num">—</span>
+            <span class="stat-label">Technologies</span>
+        </div>
+        <div class="stat" id="stat-lines">
+            <span class="stat-num">—</span>
+            <span class="stat-label">Lines of Code</span>
+        </div>
+    </div>
 
-    <!-- ── Projects Terminal ── -->
-    <section id="projects" class="section alt-bg">
-        <div class="container">
-            <h2>Projects</h2>
-            <div class="terminal-window">
-                <div class="terminal-header">
-                    <span class="terminal-dot dot-red"></span>
-                    <span class="terminal-dot dot-yellow"></span>
-                    <span class="terminal-dot dot-green"></span>
-                    <span class="terminal-title">~/projects — bash</span>
-                </div>
-                <div class="terminal-body" id="projects-terminal">
-                    <p class="terminal-line"><span class="terminal-prompt">$</span> Loading project manifest…</p>
-                    <div class="terminal-spinner" id="projects-spinner">▓▓▓░░░░░</div>
-                </div>
+    <!-- Terminal + Project cards -->
+    <section id="projects" class="projects-section">
+        <h2 class="section-heading">
+            <span class="heading-decoration">//</span> Projects
+        </h2>
+
+        <!-- Live terminal -->
+        <div class="terminal-window">
+            <div class="terminal-chrome">
+                <span class="term-dot dot-r"></span>
+                <span class="term-dot dot-y"></span>
+                <span class="term-dot dot-g"></span>
+                <span class="terminal-tab"><i class="fas fa-terminal"></i> ~/projects</span>
             </div>
-            <div class="projects-grid" id="projects-grid"></div>
-        </div>
-    </section>
-
-    <section id="features" class="section alt-bg">
-        <div class="container">
-            <h2>Features</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <i class="fas fa-paint-brush"></i>
-                    <h3>Modern Design</h3>
-                    <p>Clean lines and a pleasing color palette.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fas fa-mobile-alt"></i>
-                    <h3>Responsive</h3>
-                    <p>Looks great on all devices, from desktop to mobile.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fas fa-bolt"></i>
-                    <h3>Fast</h3>
-                    <p>Optimized for speed and performance.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fas fa-code"></i>
-                    <h3>interactive</h3>
-                    <p>Engaging elements to delight users.</p>
-                </div>
+            <div class="terminal-body" id="terminal">
+                <p class="t-line"><span class="t-prompt">$</span> cat projects.json | jq length</p>
+                <div class="t-spinner" id="spinner">⠋</div>
             </div>
         </div>
+
+        <!-- Filter bar -->
+        <div class="filter-bar" id="filter-bar"></div>
+
+        <!-- Grid -->
+        <div class="projects-grid" id="projects-grid"></div>
     </section>
 
-    <section id="contact" class="section">
-        <div class="container">
-            <h2>Get In Touch</h2>
-            <p>Interested in collaborating? Check out the repository on GitHub.</p>
-            <a href="https://github.com/Chetankhaped/Yeh-Dekho-Meri-Repository" target="_blank" class="github-button">
-                <i class="fab fa-github"></i> View on GitHub
-            </a>
-        </div>
-    </section>
-
-    <footer>
-        <p>&copy; 2026 Yeh-Dekho-Meri-Repository. All rights reserved.</p>
+    <!-- Footer -->
+    <footer class="site-footer">
+        <p>Built with <span class="footer-heart">&lt;3</span> &mdash; YDMR &mdash; <a href="https://github.com/Chetankhaped/Yeh-Dekho-Meri-Repository" target="_blank" rel="noopener">source on GitHub</a></p>
     </footer>
 
     <script src="script.js"></script>
